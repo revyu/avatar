@@ -1,69 +1,41 @@
 'use client';
- 
+
 import { useConversation } from '@11labs/react';
-import { useCallback } from 'react';
- 
+import { useCallback, useState } from 'react';
+
 export function Conversation() {
+  const [convId, setConvId] = useState<string>('');
+
   const conversation = useConversation({
-    onConnect: () => console.log('Connected'),
-    onDisconnect: () => console.log('Disconnected'),
-    onMessage: (message) => console.log('Message:', message),
-    onError: (error) => console.error('Error:', error),
-  });
- 
-  const getSignedUrl = async (): Promise<string> => {
-    	  const response = await fetch("/api/get-signed-url");
-    	    if (!response.ok) {
-    	      throw new Error(`Failed to get signed url: ${response.statusText}`);
-        }
-    	    const { signedUrl } = await response.json();
-    	    return signedUrl;
-    	  };
- 
- 
-  const startConversation = useCallback(async () => {
-    try {
-      // Request microphone permission
-      await navigator.mediaDevices.getUserMedia({ audio: true });
- 
-      const signedUrl = await getSignedUrl();
-      // Start the conversation with your agent
-      await conversation.startSession({
-        signedUrl,
+    onConnect: () => console.log('socket connected'),
+    onDisconnect: async () => {
+      if (!convId) return;
+      // let the server fetch transcript & push to KB
+      await fetch('/api/persist-conversation', {
+        method: 'POST',
+        body: JSON.stringify({ conversationId: convId }),
       });
- 
-    } catch (error) {
-      console.error('Failed to start conversation:', error);
-    }
+      setConvId('');
+      console.log('socket disconnected');
+    },
+  });
+
+  const startConversation = useCallback(async () => {
+    await navigator.mediaDevices.getUserMedia({ audio: true });
+    const res = await fetch('/api/signed-url', { method: 'POST' });
+    const { signedUrl } = await res.json();
+    const id = await conversation.startSession({ signedUrl }); // returns conv-id
+    setConvId(id);
   }, [conversation]);
- 
-  const stopConversation = useCallback(async () => {
-    await conversation.endSession();
-  }, [conversation]);
- 
+
+  const stopConversation = () => conversation.endSession();
+
   return (
-    <div className="flex flex-col items-center gap-4">
-      <div className="flex gap-2">
-        <button
-          onClick={startConversation}
-          disabled={conversation.status === 'connected'}
-          className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
-        >
-          Start Conversation
-        </button>
-        <button
-          onClick={stopConversation}
-          disabled={conversation.status !== 'connected'}
-          className="px-4 py-2 bg-red-500 text-white rounded disabled:bg-gray-300"
-        >
-          Stop Conversation
-        </button>
-      </div>
- 
-      <div className="flex flex-col items-center">
-        <p>Status: {conversation.status}</p>
-        <p>Agent is {conversation.isSpeaking ? 'speaking' : 'listening'}</p>
-      </div>
+    <div className="flex flex-col gap-3">
+      <button onClick={startConversation}>Start</button>
+      <button onClick={stopConversation}>Stop</button>
+      <p>ID: {convId}</p>
+      <p>Status: {conversation.status}</p>
     </div>
   );
 }
